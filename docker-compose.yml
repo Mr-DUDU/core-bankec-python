@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    ports:
+      - "20242:20242"
+    volumes:
+      - .:/app
+    environment:
+      FLASK_ENV: production
+    restart: always
