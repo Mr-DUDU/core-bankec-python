@@ -1,36 +1,25 @@
-import os
 import secrets
 from flask import Flask, request, g
-from flask_restx import Api, Resource, fields  # Asegúrate de tener instalada esta dependencia
+from flask_restx import Api, Resource, fields # type: ignore
 from functools import wraps
 from .db import get_connection, init_db
 import logging
-from flask_wtf.csrf import CSRFProtect  # Asegúrate de tener Flask-WTF instalado
-from flask_wtf.csrf import generate_csrf
 
-# Configuración de logging
+# Define a simple in-memory token store
+tokens = {}
+
+#log = logging.getLogger(__name__)
 logging.basicConfig(
-    filename="app.log",
-    level=logging.DEBUG,
-    encoding="utf-8",
-    filemode="a",
-    format="{asctime} - {levelname} - {message}",
-    style="{",
-    datefmt="%Y-%m-%d %H:%M",
+     filename="app.log",
+     level=logging.DEBUG,
+     encoding="utf-8",
+     filemode="a",
+     format="{asctime} - {levelname} - {message}",
+     style="{",
+     datefmt="%Y-%m-%d %H:%M",
 )
 
-app = Flask(__name__)
-
-# Obtener la clave secreta desde la variable de entorno sin un fallback inseguro
-secret_key = os.environ.get("SECRET_KEY")
-if not secret_key:
-    raise ValueError("No SECRET_KEY set for Flask application. Please set the SECRET_KEY environment variable with a secure value.")
-app.config['SECRET_KEY'] = secret_key
-
-# Inicializa la protección CSRF en la aplicación
-csrf = CSRFProtect(app)
-
-# Configuración de Swagger y autenticación con Bearer tokens
+# Configure Swagger security scheme for Bearer tokens
 authorizations = {
     'Bearer': {
         'type': 'apiKey',
@@ -40,31 +29,22 @@ authorizations = {
     }
 }
 
+app = Flask(__name__)
 api = Api(
     app,
     version='1.0',
     title='Core Bancario API',
     description='API para operaciones bancarias, incluyendo autenticación y operaciones de cuenta.',
-    doc='/swagger',  # Endpoint para Swagger UI
+    doc='/swagger',  # Swagger UI endpoint
     authorizations=authorizations,
     security='Bearer'
 )
 
-
-# --- Endpoint para obtener el token CSRF (Para pruebas) ---
-@api.route('/get-csrf-token')
-class GetCSRFToken(Resource):
-    def get(self):
-        # Genera y devuelve un token CSRF
-        token = generate_csrf()
-        return {"csrf_token": token}, 200
-
-
-# --- Creación de namespaces ---
+# Create namespaces for authentication and bank operations
 auth_ns = api.namespace('auth', description='Operaciones de autenticación')
 bank_ns = api.namespace('bank', description='Operaciones bancarias')
 
-# --- Definición de modelos para Swagger ---
+# Define the expected payload models for Swagger
 login_model = auth_ns.model('Login', {
     'username': fields.String(required=True, description='Nombre de usuario', example='user1'),
     'password': fields.String(required=True, description='Contraseña', example='pass1')
@@ -92,8 +72,8 @@ pay_credit_balance_model = bank_ns.model('PayCreditBalance', {
     'amount': fields.Float(required=True, description='Monto a abonar a la deuda de la tarjeta', example=50)
 })
 
+# ---------------- Authentication Endpoints ----------------
 
-# --- Endpoints de Autenticación ---
 @auth_ns.route('/login')
 class Login(Resource):
     @auth_ns.expect(login_model, validate=True)
@@ -103,17 +83,14 @@ class Login(Resource):
         data = api.payload
         username = data.get("username")
         password = data.get("password")
-
+        
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute(
-            "SELECT id, username, password, role, full_name, email FROM bank.users WHERE username = %s",
-            (username,)
-        )
+        cur.execute("SELECT id, username, password, role, full_name, email FROM bank.users WHERE username = %s", (username,))
         user = cur.fetchone()
         if user and user[2] == password:
             token = secrets.token_hex(16)
-            # Persistir el token en la base de datos
+            # Persist the token in the database
             cur.execute("INSERT INTO bank.tokens (token, user_id) VALUES (%s, %s)", (token, user[0]))
             conn.commit()
             cur.close()
@@ -123,7 +100,6 @@ class Login(Resource):
             cur.close()
             conn.close()
             api.abort(401, "Invalid credentials")
-
 
 @auth_ns.route('/logout')
 class Logout(Resource):
@@ -147,8 +123,8 @@ class Logout(Resource):
         conn.close()
         return {"message": "Logout successful"}, 200
 
+# ---------------- Token-Required Decorator ----------------
 
-# --- Decorador para requerir token en endpoints ---
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -156,9 +132,10 @@ def token_required(f):
         if not auth_header.startswith("Bearer "):
             api.abort(401, "Authorization header missing or invalid")
         token = auth_header.split(" ")[1]
-        logging.debug("Token: " + str(token))
+        logging.debug("Token: "+str(token))
         conn = get_connection()
         cur = conn.cursor()
+        # Query the token in the database and join with users table to retrieve user info
         cur.execute("""
             SELECT u.id, u.username, u.role, u.full_name, u.email 
             FROM bank.tokens t
@@ -178,15 +155,13 @@ def token_required(f):
             "email": user[4]
         }
         return f(*args, **kwargs)
-
     return decorated
 
+# ---------------- Banking Operation Endpoints ----------------
 
-# --- Endpoints de Operaciones Bancarias ---
 @bank_ns.route('/deposit')
 class Deposit(Resource):
-    logging.debug("Entering deposit endpoint...")
-
+    logging.debug("Entering....")
     @bank_ns.expect(deposit_model, validate=True)
     @bank_ns.doc('deposit')
     @token_required
@@ -198,12 +173,13 @@ class Deposit(Resource):
         data = api.payload
         account_number = data.get("account_number")
         amount = data.get("amount", 0)
-
+        
         if amount <= 0:
             api.abort(400, "Amount must be greater than zero")
-
+        
         conn = get_connection()
         cur = conn.cursor()
+        # Update the specified account using its account number (primary key)
         cur.execute(
             "UPDATE bank.accounts SET balance = balance + %s WHERE id = %s RETURNING balance",
             (amount, account_number)
@@ -219,7 +195,6 @@ class Deposit(Resource):
         cur.close()
         conn.close()
         return {"message": "Deposit successful", "new_balance": new_balance}, 200
-
 
 @bank_ns.route('/withdraw')
 class Withdraw(Resource):
@@ -246,14 +221,12 @@ class Withdraw(Resource):
             cur.close()
             conn.close()
             api.abort(400, "Insufficient funds")
-        cur.execute("UPDATE bank.accounts SET balance = balance - %s WHERE user_id = %s RETURNING balance",
-                    (amount, user_id))
+        cur.execute("UPDATE bank.accounts SET balance = balance - %s WHERE user_id = %s RETURNING balance", (amount, user_id))
         new_balance = float(cur.fetchone()[0])
         conn.commit()
         cur.close()
         conn.close()
         return {"message": "Withdrawal successful", "new_balance": new_balance}, 200
-
 
 @bank_ns.route('/transfer')
 class Transfer(Resource):
@@ -271,6 +244,7 @@ class Transfer(Resource):
             api.abort(400, "Cannot transfer to the same account")
         conn = get_connection()
         cur = conn.cursor()
+        # Check sender's balance
         cur.execute("SELECT balance FROM bank.accounts WHERE user_id = %s", (g.user['id'],))
         row = cur.fetchone()
         if not row:
@@ -282,6 +256,7 @@ class Transfer(Resource):
             cur.close()
             conn.close()
             api.abort(400, "Insufficient funds")
+        # Find target user
         cur.execute("SELECT id FROM bank.users WHERE username = %s", (target_username,))
         target_user = cur.fetchone()
         if not target_user:
@@ -303,7 +278,6 @@ class Transfer(Resource):
         cur.close()
         conn.close()
         return {"message": "Transfer successful", "new_balance": new_balance}, 200
-
 
 @bank_ns.route('/credit-payment')
 class CreditPayment(Resource):
@@ -355,7 +329,6 @@ class CreditPayment(Resource):
             "credit_card_debt": new_credit_balance
         }, 200
 
-
 @bank_ns.route('/pay-credit-balance')
 class PayCreditBalance(Resource):
     @bank_ns.expect(pay_credit_balance_model, validate=True)
@@ -374,6 +347,7 @@ class PayCreditBalance(Resource):
         user_id = g.user['id']
         conn = get_connection()
         cur = conn.cursor()
+        # Check account funds
         cur.execute("SELECT balance FROM bank.accounts WHERE user_id = %s", (user_id,))
         row = cur.fetchone()
         if not row:
@@ -385,6 +359,7 @@ class PayCreditBalance(Resource):
             cur.close()
             conn.close()
             api.abort(400, "Insufficient funds in account")
+        # Get current credit card debt
         cur.execute("SELECT balance FROM bank.credit_cards WHERE user_id = %s", (user_id,))
         row = cur.fetchone()
         if not row:
@@ -414,12 +389,10 @@ class PayCreditBalance(Resource):
             "credit_card_debt": new_credit_debt
         }, 200
 
-
-# Inicializa la base de datos antes de la primera solicitud
 @app.before_first_request
 def initialize_db():
     init_db()
 
-
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000, debug=True)
+
