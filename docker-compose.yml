@@ -26,6 +26,18 @@ services:
       POSTGRES_DB: corebank
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
+      SECRET_KEY: ${SECRET_KEY}  # Se obtiene el valor desde el entorno o un archivo .env
 
 volumes:
   pgdata:
+
+
+
+
+
+
+
+
+
+
+

@@ -1,3 +1,4 @@
+import os
 import secrets
 from flask import Flask, request, g
 from flask_restx import Api, Resource, fields  # Asegúrate de tener instalada esta dependencia
@@ -19,8 +20,12 @@ logging.basicConfig(
 )
 
 app = Flask(__name__)
-# Configura una clave secreta para el manejo de sesiones y tokens CSRF
-app.config['SECRET_KEY'] = 'UAH9E/oqSWRm5bhne61DZZrzLFDU/hKDOD/djPPBfaW6VoGCc/0T5uYl2O61UE6P'
+
+# Obtener la clave secreta desde la variable de entorno sin un fallback inseguro
+secret_key = os.environ.get("SECRET_KEY")
+if not secret_key:
+    raise ValueError("No SECRET_KEY set for Flask application. Please set the SECRET_KEY environment variable with a secure value.")
+app.config['SECRET_KEY'] = secret_key
 
 # Inicializa la protección CSRF en la aplicación
 csrf = CSRFProtect(app)
