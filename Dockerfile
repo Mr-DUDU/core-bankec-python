@@ -1,26 +1,21 @@
-# Use an official Python runtime as the base image
-FROM python:3.9-slim
+# Usar imagen base de Python 3.10-slim
+FROM python:3.10-slim
 
-# Set the working directory in the container
+# Establecer el directorio de trabajo
 WORKDIR /app
 
-# Copy the requirements file into the container
+# Instalar dependencias del sistema (gcc, libpq-dev para compilar psycopg2)
+RUN apt-get update && apt-get install -y gcc libpq-dev && rm -rf /var/lib/apt/lists/*
+
+# Copiar archivo de requerimientos e instalar dependencias Python
 COPY requirements.txt .
+RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
 
-# Install any needed packages specified in requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+# Copiar el código de la aplicación
+COPY app/ ./app/
 
-# Copy the current directory contents into the container at /app
-COPY . .
+# Exponer el puerto 8000
+EXPOSE 8000
 
-# Make port 5000 available to the world outside this container
-EXPOSE 20242
-
-# Define environment variable for Flask
-ENV FLASK_APP=app.py
-ENV FLASK_ENV=production
-
-# Run the Flask application
-#CMD ["flask", "run", "--host=0.0.0.0"]
-# Run Gunicorn WSGI server
-CMD ["gunicorn", "--workers", "4", "--bind", "0.0.0.0:20242", "app:app"]
+# Ejecutar la aplicación con Gunicorn (4 workers)
+CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:8000", "app.main:app"]
