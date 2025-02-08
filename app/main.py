@@ -20,7 +20,7 @@ logging.basicConfig(
 
 app = Flask(__name__)
 # Configura una clave secreta para el manejo de sesiones y tokens CSRF
-app.config['SECRET_KEY'] = 'tu_clave_secreta_muy_segura'
+app.config['SECRET_KEY'] = 'UAH9E/oqSWRm5bhne61DZZrzLFDU/hKDOD/djPPBfaW6VoGCc/0T5uYl2O61UE6P'
 
 # Inicializa la protección CSRF en la aplicación
 csrf = CSRFProtect(app)
