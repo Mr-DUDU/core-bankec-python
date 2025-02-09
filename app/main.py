@@ -18,7 +18,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60
 # ---------------- CONFIGURACIÓN DE LOGGING ----------------
 # Configuración básica que escribe en el archivo app.log
 logging.basicConfig(
-    filename="app.log",  # El archivo se creará en el directorio donde se ejecute la app
+    filename="app.log",
     level=logging.INFO,
     encoding="utf-8",
     filemode="a",
@@ -126,7 +126,7 @@ def token_required(f):
         if count > 0:
             api.abort(401, "Token has been revoked")
 
-        # Validar información del usuario (opcional, pero recomendable)
+        # Validar información del usuario
         user_id = decoded.get("user_id")
         username = decoded.get("username")
         conn = get_connection()
